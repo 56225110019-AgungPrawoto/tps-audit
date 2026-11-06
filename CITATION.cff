@@ -1,0 +1,8 @@
+cff-version: 1.2.0
+message: "If you use this package, please cite the paper."
+title: "TPS audit: reproducibility package"
+authors:
+  - family-names: Prawoto
+    given-names: Agung
+version: 0.1.0
+date-released: 2026-11-05
