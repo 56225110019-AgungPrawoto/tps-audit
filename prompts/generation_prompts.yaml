@@ -1,0 +1,19 @@
+# !!! REPLACE the three strings below with the EXACT prompts used to build the dataset. !!!
+# The reviewers asked for the generation prompts to be released. The text here is a neutral TEMPLATE written for
+# this package; it is NOT claimed to be the original wording. Training and evaluation read these strings,
+# so changing them changes results: record the final text in the paper.
+system_grounded: >-
+  Anda adalah asisten akademik. Jawab pertanyaan dalam bahasa Indonesia hanya berdasarkan konteks dokumen yang diberikan.
+user_grounded: |-
+  Konteks:
+  {context}
+
+  Pertanyaan: {question}
+user_ungrounded: |-
+  Jawab pertanyaan berikut berdasarkan asumsi Anda sendiri.
+
+  Pertanyaan: {question}
+# candidate generation settings (from the manuscript)
+generation:
+  grounded_temperatures: [0.4, 1.2]
+  ungrounded_temperature: 1.8
