@@ -1,16 +1,16 @@
-# Colab T4 (torch is preinstalled by Colab). Versions pinned to the TRL 0.12.2 API used in src/tpsaudit/train_dpo.py.
-# Not executed on a GPU when this package was written: if pip reports a conflict with Colab's torch, loosen the pins and re-run tests.
-numpy>=1.26
-pandas>=2.1
-scipy>=1.11
-pyyaml>=6
-transformers==4.46.3
-trl==0.12.2
-peft==0.13.2
-accelerate==1.1.1
-bitsandbytes==0.44.1
-datasets==3.1.0
-sentence-transformers==3.3.1
-sentencepiece
-protobuf
+# Colab T4. The original notebooks used UNPINNED ranges (transformers>=4.49, trl>=0.12, peft>=0.13); keep them unpinned so the code
+# behaves as in the original run, and record the versions actually installed (config.snapshot writes them next to every result).
+transformers>=4.49.0
+trl>=0.12.0
+peft>=0.13.0
+datasets>=2.20.0
+accelerate
+bitsandbytes
+sentence-transformers>=2.7.0
+rouge-score==0.1.2
+pandas
+numpy
+scipy
+pyyaml
 requests
+psutil

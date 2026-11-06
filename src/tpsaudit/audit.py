@@ -64,6 +64,7 @@ def repair(pairs, language="chosen_or_rejected", dedupe=True):
 def select_pairs(df, n, mode="random", seed=42):
     """Pre-specified selection rule. random: seeded simple random sample; max_margin; all."""
     if mode == "all" or n is None or n >= len(df): return df.copy()
+    if mode == "first_n": return df.iloc[:n].copy()          # rows in Stage 2 processing order (hypothesis for the original 234)
     if mode == "random": return df.sample(n=n, random_state=seed)
     if mode == "max_margin": return df.nlargest(n, "margin")
     raise ValueError(mode)
@@ -80,3 +81,16 @@ def selection_report(full, sub):
         for r in full.run.unique():
             rows.append({"feature": f"share_run_{r}", "full_mean": (full.run == r).mean(), "subset_mean": (sub.run == r).mean(), "mann_whitney_p": np.nan})
     return pd.DataFrame(rows)
+
+
+def minimal_clean(sub, language="chosen_or_rejected", dedupe=True):
+    """Controlled 'clean' arm: take the SAME subset as the original arm and only remove (a) pairs with Chinese characters
+    on the chosen side or on either side, and (b) repeated question texts (keep the first occurrence). Nothing else changes,
+    so differences in drift can be attributed to these pairs. Returns (clean_df, removed_df_with_reason)."""
+    d = sub.copy(); d["_zh_c"] = d.chosen.map(has_zh); d["_zh_r"] = d.rejected.map(has_zh)
+    d["_dup"] = d.question.str.strip().str.lower().duplicated(keep="first") if dedupe else False
+    bad_lang = d._zh_c if language == "chosen" else (d._zh_c | d._zh_r)
+    reason = pd.Series("", index=d.index)
+    reason[bad_lang] = "chinese"; reason[d._dup & ~bad_lang] = "duplicate_question"
+    removed = d[reason != ""].assign(reason=reason[reason != ""]).drop(columns=["_zh_c", "_zh_r", "_dup"])
+    return d[reason == ""].drop(columns=["_zh_c", "_zh_r", "_dup"]), removed

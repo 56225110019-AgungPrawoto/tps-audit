@@ -29,23 +29,24 @@ W = dict(sg=0.4, sr=0.4, sl=0.2)
 
 # ---------------------------------------------------------------- ablation
 def ablation(df, thr=0.15):
+    """Scoring ablation on stored component scores. For each removed dimension three variants are reported:
+       proportional : remaining weights rescaled to sum to 1 (0.667/0.333 ...)
+       equal_split  : remaining weight shared equally (0.5/0.5), as in the original Stage 2 notebook (NO_SG/NO_SR/NO_LEX)
+       unadjusted   : remaining weights left as they are (score range shrinks; threshold not comparable)
+    Reported: pairs still >= thr, ranking reversals (reduced margin < 0), ties (== 0), mean margin."""
+    def score(prefix, w): return sum(w[k] * df[f"{prefix}_{k}"] for k in w)
     rows = []
-    def score(prefix, w):
-        return sum(w[k] * df[f"{prefix}_{k}"] for k in w)
-    full_c = score("chosen", W); full_r = score("rej", W)
-    rows.append(("None (full TPS)", W, int(((full_c - full_r) >= thr).sum()),
-                 float(((full_c - full_r) < 0).mean() * 100), float(((full_c - full_r) == 0).mean() * 100)))
+    def add(name, variant, w):
+        d = score("chosen", w) - score("rej", w)
+        rows.append((name, variant, {k: round(v, 3) for k, v in w.items()}, int((d >= thr).sum()), int((d < 0).sum()), int((d == 0).sum()),
+                     float(100 * (d < 0).mean()), float(d.mean())))
+    add("none (full TPS)", "full", W)
     for drop in ("sg", "sr", "sl"):
-        keep = {k: v for k, v in W.items() if k != drop}
-        tot = sum(keep.values())
-        w2 = {k: v / tot for k, v in keep.items()}          # renormalize to sum to 1
-        d = score("chosen", w2) - score("rej", w2)
-        rows.append((f"w/o {drop}", w2, int((d >= thr).sum()), float((d < 0).mean() * 100), float((d == 0).mean() * 100)))
-        # unadjusted variant, as in the submitted manuscript
-        du = score("chosen", keep) - score("rej", keep)
-        rows.append((f"w/o {drop} (no renorm.)", keep, int((du >= thr).sum()), float((du < 0).mean() * 100), float((du == 0).mean() * 100)))
-    out = pd.DataFrame(rows, columns=["removed", "weights", "pairs>=thr", "reversed_%", "tied_%"])
-    return out
+        keep = {k: v for k, v in W.items() if k != drop}; tot = sum(keep.values())
+        add(f"w/o {drop}", "proportional", {k: v / tot for k, v in keep.items()})
+        add(f"w/o {drop}", "equal_split", {k: 1 / len(keep) for k in keep})
+        add(f"w/o {drop}", "unadjusted", keep)
+    return pd.DataFrame(rows, columns=["removed", "variant", "weights", "pairs>=thr", "reversed", "tied", "reversed_%", "mean_margin"])
 
 
 # ---------------------------------------------------------------- decontam

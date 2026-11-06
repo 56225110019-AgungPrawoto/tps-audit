@@ -1,19 +1,25 @@
-# !!! REPLACE the three strings below with the EXACT prompts used to build the dataset. !!!
-# The reviewers asked for the generation prompts to be released. The text here is a neutral TEMPLATE written for
-# this package; it is NOT claimed to be the original wording. Training and evaluation read these strings,
-# so changing them changes results: record the final text in the paper.
-system_grounded: >-
-  Anda adalah asisten akademik. Jawab pertanyaan dalam bahasa Indonesia hanya berdasarkan konteks dokumen yang diberikan.
-user_grounded: |-
-  Konteks:
-  {context}
+# EXACT prompt strings from the original notebooks (copied verbatim; do not "fix" them, they define the experiment).
+# Source cells are noted so a reader can diff against original_notebooks/.
 
-  Pertanyaan: {question}
-user_ungrounded: |-
-  Jawab pertanyaan berikut berdasarkan asumsi Anda sendiri.
+# ---- Stage 2 (dataset generation), Cell 13 and Cell 15 -------------------------------------------
+stage2_system_chosen: "Jawab singkat & padat (min 3 kalimat) sesuai konteks yang diberikan."
+stage2_system_rejected: "Jawab pertanyaan berikut berdasarkan asumsimu sendiri tanpa referensi faktual."
+stage2_user_with_context: "Konteks dokumen:\n{context}\n\nPertanyaan: {query}"
+stage2_user_no_context: "{query}"
+stage2_sampling: {max_new_tokens: 350, top_p: 0.9, temperatures: {chosen_conservative: 0.4, chosen_creative: 1.2, rejected: 1.8}}
 
-  Pertanyaan: {question}
-# candidate generation settings (from the manuscript)
-generation:
-  grounded_temperatures: [0.4, 1.2]
-  ungrounded_temperature: 1.8
+# ---- Stage 3 (DPO training), Cell 1 and to_trl_conversational() -----------------------------------
+# NOTE: differs from Stage 2: no trailing period in the system prompt, "Konteks:" instead of "Konteks dokumen:",
+# and the REJECTED answer (generated WITHOUT context in Stage 2) is trained under a prompt that WITH context.
+stage3_system: "Jawab singkat & padat (min 3 kalimat) sesuai konteks yang diberikan"
+stage3_user: "Konteks:\n{context}\n\nPertanyaan: {query}"
+
+# ---- Stage 4 (evaluation), generate_responses_llm() ------------------------------------------------
+# NOTE: context sits inside a long system message; the user message is the bare question.
+stage4_system_prefix: >-
+  Kamu adalah asisten akademik Universitas Mercu Buana. Jawablah pertanyaan mahasiswa secara akurat berdasarkan dokumen resmi akademik.
+  Berikan jawaban yang faktual, ringkas, dan tidak berhalusinasi. Sertakan nama dokumen dan halaman yang relevan dalam jawaban.
+stage4_context_header: "Konteks dokumen yang relevan:\n"
+stage4_context_block: "[Sumber {i}: {pdf_name}.pdf - Halaman {page} | skor={score:.3f}]\n{text}"
+stage4_no_context: "(Tidak ada dokumen konteks yang di-retrieve.)"
+stage4_sampling: {max_new_tokens: 200, temperature: 0.4, top_p: 0.9, repetition_penalty: 1.1, input_max_length: 2048, n_runs: 3}
