@@ -1,5 +1,5 @@
 """LoRA-DPO training = Stage 3 notebook, parametrised. Every value comes from configs/default.yaml (copied from Stage 3).
-Differences from the original, all listed in docs/DEVIATIONS.md: explicit `seed`, one output dir per arm, save_strategy='no'."""
+Differences from the original, all listed in docs/DEVIATIONS.md: explicit `seed`, one output dir per arm, checkpoints every 10 steps (resumable)."""
 import gc, json
 from pathlib import Path
 import pandas as pd
@@ -38,16 +38,21 @@ def train_arm(cfg, prompts, train_df, out_dir, seed=42, hf_token=None):
     model = AutoModelForCausalLM.from_pretrained(t["base_model"], quantization_config=bnb, device_map="auto", token=hf_token, low_cpu_mem_usage=True)
     model = prepare_model_for_kbit_training(model, use_gradient_checkpointing=True)
     lora = LoraConfig(r=lc["r"], lora_alpha=lc["alpha"], lora_dropout=lc["dropout"], target_modules=lc["target_modules"], bias=lc["bias"], task_type="CAUSAL_LM")
-    args = DPOConfig(output_dir=str(out), beta=d["beta"], learning_rate=d["learning_rate"], per_device_train_batch_size=d["per_device_batch"],
-                     gradient_accumulation_steps=d["grad_accum"], num_train_epochs=d["epochs"], optim=d["optimizer"], lr_scheduler_type=d["lr_scheduler"],
-                     warmup_ratio=d["warmup_ratio"], max_length=d["max_length"], bf16=True, fp16=False, gradient_checkpointing=True,
-                     logging_steps=5, save_strategy="no", report_to="none", seed=seed)
+    base = dict(output_dir=str(out), beta=d["beta"], learning_rate=d["learning_rate"], per_device_train_batch_size=d["per_device_batch"],
+                gradient_accumulation_steps=d["grad_accum"], num_train_epochs=d["epochs"], optim=d["optimizer"], lr_scheduler_type=d["lr_scheduler"],
+                max_length=d["max_length"], bf16=True, fp16=False, gradient_checkpointing=True,
+                logging_steps=5, save_strategy="steps", save_steps=10, save_total_limit=2, report_to="none", seed=seed)   # checkpoints so a dropped Colab session can resume
+    try:
+        args = DPOConfig(warmup_ratio=d["warmup_ratio"], **base)        # older transformers (used in the original run, deprecated there)
+    except TypeError:
+        args = DPOConfig(warmup_steps=d["warmup_ratio"], **base)        # newer transformers: a float < 1 is read as a ratio of total steps
     kw = dict(model=model, args=args, train_dataset=ds, peft_config=lora)     # no ref_model: reference = adapter disabled
     try:
         trainer = DPOTrainer(tokenizer=tok, **kw)
     except TypeError:
         trainer = DPOTrainer(processing_class=tok, **kw)
-    res = trainer.train()
+    ckpts = sorted(out.glob("checkpoint-*"), key=lambda p: int(p.name.split("-")[1]))
+    res = trainer.train(resume_from_checkpoint=str(ckpts[-1]) if ckpts else None)
     trainer.save_model(str(out)); tok.save_pretrained(str(out))
     info = {"n_examples": len(ds), "optimizer_steps": int(trainer.state.global_step), "expected_steps": expected_steps(len(ds), d["per_device_batch"], d["grad_accum"], d["epochs"]),
             "train_loss": float(res.training_loss), "effective_batch_size": d["per_device_batch"] * d["grad_accum"], "seed": seed,
