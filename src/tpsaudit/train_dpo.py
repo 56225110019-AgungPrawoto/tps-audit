@@ -30,7 +30,15 @@ def train_arm(cfg, prompts, train_df, out_dir, seed=42, hf_token=None):
     t = cfg["training"]; d = t["dpo"]; lc = t["lora"]; out = Path(out_dir); out.mkdir(parents=True, exist_ok=True)
     df = prepare_training_frame(train_df)
     ds = Dataset.from_list([to_trl_conversational(r, prompts) for r in df.to_dict("records")])
-    dtype = torch.bfloat16
+    # GPU without native bf16 (Colab T4, compute capability 7.5): use fp16 instead and turn off the TRL kernel path that needs capability >= 8.0.
+    # The original run used bf16 (Stage 3); this fallback is listed in docs/DEVIATIONS.md.
+    bf16_ok = torch.cuda.is_available() and torch.cuda.get_device_capability()[0] >= 8
+    dtype = torch.bfloat16 if bf16_ok else torch.float16
+    if not bf16_ok:
+        try:
+            import trl.kernels.chunked_logprob as _k; _k._MM_OUT_DTYPE = False
+        except Exception:
+            pass
     bnb = BitsAndBytesConfig(load_in_4bit=True, bnb_4bit_quant_type="nf4", bnb_4bit_use_double_quant=True, bnb_4bit_compute_dtype=dtype)
     tok = AutoTokenizer.from_pretrained(t["base_model"], token=hf_token)
     if tok.pad_token is None:
@@ -40,7 +48,7 @@ def train_arm(cfg, prompts, train_df, out_dir, seed=42, hf_token=None):
     lora = LoraConfig(r=lc["r"], lora_alpha=lc["alpha"], lora_dropout=lc["dropout"], target_modules=lc["target_modules"], bias=lc["bias"], task_type="CAUSAL_LM")
     base = dict(output_dir=str(out), beta=d["beta"], learning_rate=d["learning_rate"], per_device_train_batch_size=d["per_device_batch"],
                 gradient_accumulation_steps=d["grad_accum"], num_train_epochs=d["epochs"], optim=d["optimizer"], lr_scheduler_type=d["lr_scheduler"],
-                max_length=d["max_length"], bf16=True, fp16=False, gradient_checkpointing=True,
+                max_length=d["max_length"], bf16=bf16_ok, fp16=not bf16_ok, gradient_checkpointing=True,
                 logging_steps=5, save_strategy="steps", save_steps=10, save_total_limit=2, report_to="none", seed=seed)   # checkpoints so a dropped Colab session can resume
     try:
         args = DPOConfig(warmup_ratio=d["warmup_ratio"], **base)        # older transformers (used in the original run, deprecated there)
