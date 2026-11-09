@@ -43,7 +43,7 @@ def train_arm(cfg, prompts, train_df, out_dir, seed=42, hf_token=None):
     tok = AutoTokenizer.from_pretrained(t["base_model"], token=hf_token)
     if tok.pad_token is None:
         tok.pad_token = tok.eos_token
-    model = AutoModelForCausalLM.from_pretrained(t["base_model"], quantization_config=bnb, device_map="auto", token=hf_token, low_cpu_mem_usage=True)
+    model = AutoModelForCausalLM.from_pretrained(t["base_model"], quantization_config=bnb, device_map="auto", token=hf_token, low_cpu_mem_usage=True, torch_dtype=dtype)   # explicit: newer transformers default to the checkpoint dtype (bf16)
     model = prepare_model_for_kbit_training(model, use_gradient_checkpointing=True)
     lora = LoraConfig(r=lc["r"], lora_alpha=lc["alpha"], lora_dropout=lc["dropout"], target_modules=lc["target_modules"], bias=lc["bias"], task_type="CAUSAL_LM")
     base = dict(output_dir=str(out), beta=d["beta"], learning_rate=d["learning_rate"], per_device_train_batch_size=d["per_device_batch"],
@@ -59,6 +59,10 @@ def train_arm(cfg, prompts, train_df, out_dir, seed=42, hf_token=None):
         trainer = DPOTrainer(tokenizer=tok, **kw)
     except TypeError:
         trainer = DPOTrainer(processing_class=tok, **kw)
+    if not bf16_ok:      # fp16 GradScaler cannot unscale bf16/fp16 gradients: keep every trainable (LoRA) parameter in fp32
+        for prm in trainer.model.parameters():
+            if prm.requires_grad and prm.dtype != torch.float32:
+                prm.data = prm.data.float()
     ckpts = sorted(out.glob("checkpoint-*"), key=lambda p: int(p.name.split("-")[1]))
     res = trainer.train(resume_from_checkpoint=str(ckpts[-1]) if ckpts else None)
     trainer.save_model(str(out)); tok.save_pretrained(str(out))
